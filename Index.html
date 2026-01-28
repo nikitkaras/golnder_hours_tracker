@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Golden Hour Meeting Finder</title>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/luxon/3.4.4/luxon.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+    <style>
+        :root {
+            --bg-color: #f4f7f6;
+            --text-color: #333;
+            --card-bg: #ffffff;
+            --accent-color: #2b2d42;
+            --bar-color: #FF9F1C; /* Orange */
+            --overlap-color: rgba(46, 196, 182, 0.4); /* Teal transparent */
+            --border-color: #ddd;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        h1 { margin-bottom: 10px; color: var(--accent-color); }
+        p.subtitle { margin-top: 0; color: #666; margin-bottom: 30px; }
+
+        /* Container */
+        .app-container {
+            width: 100%;
+            max-width: 1200px;
+            background: var(--card-bg);
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+
+        /* Controls Section */
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid var(--border-color);
+            margin-bottom: 20px;
+            align-items: flex-end;
+        }
+
+        .input-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        label { font-size: 0.85rem; font-weight: 600; margin-bottom: 5px; }
+        
+        input, select {
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            font-size: 1rem;
+        }
+
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: opacity 0.2s;
+        }
+
+        .btn-add { background-color: var(--accent-color); color: white; }
+        .btn-download { background-color: #2ec4b6; color: white; margin-left: auto; }
+        button:hover { opacity: 0.9; }
+
+        /* Visualization Section */
+        #visualization-area {
+            position: relative;
+            background: white; /* Important for screenshot */
+            padding: 20px;
+            overflow-x: auto;
+        }
+
+        .timeline-header {
+            display: grid;
+            grid-template-columns: 200px repeat(24, 1fr);
+            gap: 2px;
+            margin-bottom: 10px;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 10px;
+            font-size: 0.8rem;
+            color: #888;
+            text-align: center;
+        }
+
+        .stakeholder-row {
+            display: grid;
+            grid-template-columns: 200px repeat(24, 1fr);
+            gap: 2px;
+            align-items: center;
+            margin-bottom: 8px;
+            height: 40px;
+        }
+
+        .stakeholder-info {
+            padding-right: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.9rem;
+            font-weight: bold;
+            border-right: 1px solid #eee;
+        }
+
+        .remove-btn {
+            color: red;
+            cursor: pointer;
+            font-size: 1.2rem;
+            line-height: 1;
+            margin-left: 5px;
+        }
+
+        .time-slot {
+            height: 100%;
+            border-radius: 4px;
+            background-color: #f9f9f9; /* Empty slot */
+        }
+
+        .is-working {
+            background-color: var(--bar-color);
+        }
+
+        /* Overlap Highlight Layer */
+        .overlap-overlay {
+            position: absolute;
+            top: 55px; /* Height of header + padding */
+            left: 220px; /* Width of name column + padding */
+            right: 20px;
+            bottom: 20px;
+            display: grid;
+            grid-template-columns: repeat(24, 1fr);
+            gap: 2px;
+            pointer-events: none; /* Let clicks pass through */
+        }
+
+        .overlap-col {
+            height: 100%;
+        }
+
+        .is-golden {
+            background-color: var(--overlap-color);
+            border: 2px solid #2ec4b6;
+            border-radius: 4px;
+        }
+
+        .legend {
+            margin-top: 20px;
+            display: flex;
+            gap: 20px;
+            font-size: 0.9rem;
+        }
+        .legend-item { display: flex; align-items: center; gap: 8px; }
+        .box { width: 16px; height: 16px; border-radius: 4px; }
+        .box.orange { background: var(--bar-color); }
+        .box.green { background: #2ec4b6; opacity: 0.5; border: 1px solid #2ec4b6; }
+
+    </style>
+</head>
+<body>
+
+    <h1>The Golden Hour Meeting Finder</h1>
+    <p class="subtitle">Visualize overlaps across time zones relative to YOUR local time.</p>
+
+    <div class="app-container">
+        
+        <div class="controls">
+            <div class="input-group">
+                <label>Name</label>
+                <input type="text" id="s-name" placeholder="e.g. John (London)">
+            </div>
+            
+            <div class="input-group">
+                <label>Time Zone</label>
+                <select id="s-timezone">
+                    </select>
+            </div>
+
+            <div class="input-group">
+                <label>Start (Local Time)</label>
+                <input type="time" id="s-start" value="09:00">
+            </div>
+
+            <div class="input-group">
+                <label>End (Local Time)</label>
+                <input type="time" id="s-end" value="17:00">
+            </div>
+
+            <button class="btn-add" onclick="addStakeholder()">+ Add Stakeholder</button>
+            <button class="btn-download" onclick="downloadImage()">📸 Download Image</button>
+        </div>
+
+        <div id="visualization-area">
+            <div class="timeline-header" id="timeline-header">
+                </div>
+            
+            <div id="rows-container">
+                </div>
+
+            <div class="overlap-overlay" id="overlap-layer"></div>
+        </div>
+
+        <div class="legend">
+            <div class="legend-item"><div class="box orange"></div> Working Hours</div>
+            <div class="legend-item"><div class="box green"></div> Golden Hour (Overlap)</div>
+            <div id="status-msg" style="margin-left: auto; color: #666; font-style: italic;"></div>
+        </div>
+
+    </div>
+
+    <script>
+        // --- Configuration & State ---
+        const DateTime = luxon.DateTime;
+        let stakeholders = [];
+        const MAX_STAKEHOLDERS = 10;
+        
+        // Common Timezones for the dropdown
+        const timeZones = [
+            { label: "UTC (Universal)", zone: "utc" },
+            { label: "London / Dublin (GMT/BST)", zone: "Europe/London" },
+            { label: "Central Europe (Paris/Berlin)", zone: "Europe/Paris" },
+            { label: "Eastern Europe (Kyiv/Helsinki)", zone: "Europe/Kiev" },
+            { label: "US Eastern (NY/Toronto)", zone: "America/New_York" },
+            { label: "US Central (Chicago)", zone: "America/Chicago" },
+            { label: "US Mountain (Denver)", zone: "America/Denver" },
+            { label: "US Pacific (LA/SF)", zone: "America/Los_Angeles" },
+            { label: "India (IST)", zone: "Asia/Kolkata" },
+            { label: "Singapore / China", zone: "Asia/Singapore" },
+            { label: "Japan (Tokyo)", zone: "Asia/Tokyo" },
+            { label: "Australia (Sydney)", zone: "Australia/Sydney" },
+            { label: "New Zealand (Auckland)", zone: "Pacific/Auckland" },
+            { label: "Brazil (Sao Paulo)", zone: "America/Sao_Paulo" }
+        ];
+
+        // --- Initialization ---
+        window.onload = () => {
+            const select = document.getElementById('s-timezone');
+            timeZones.forEach(tz => {
+                const opt = document.createElement('option');
+                opt.value = tz.zone;
+                opt.innerText = tz.label;
+                select.appendChild(opt);
+            });
+            
+            // Set default to user's local timezone if possible, else UTC
+            const localZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+            select.value = localZone || "utc";
+
+            renderTimelineHeader();
+        };
+
+        // --- Logic ---
+
+        function addStakeholder() {
+            if (stakeholders.length >= MAX_STAKEHOLDERS) {
+                alert("Maximum limit of 10 stakeholders reached.");
+                return;
+            }
+
+            const name = document.getElementById('s-name').value;
+            const zone = document.getElementById('s-timezone').value;
+            const start = document.getElementById('s-start').value;
+            const end = document.getElementById('s-end').value;
+
+            if (!name) { alert("Please enter a name."); return; }
+
+            stakeholders.push({
+                id: Date.now(),
+                name,
+                zone,
+                startH: parseInt(start.split(':')[0]),
+                endH: parseInt(end.split(':')[0])
+            });
+
+            document.getElementById('s-name').value = ""; // Clear name input
+            renderApp();
+        }
+
+        function removeStakeholder(id) {
+            stakeholders = stakeholders.filter(s => s.id !== id);
+            renderApp();
+        }
+
+        function renderTimelineHeader() {
+            const header = document.getElementById('timeline-header');
+            header.innerHTML = '<div>STAKEHOLDER</div>'; // First col label
+            
+            // We display hours 00 to 23 based on Viewer's Local Time
+            for (let i = 0; i < 24; i++) {
+                const div = document.createElement('div');
+                div.innerText = i.toString().padStart(2, '0');
+                header.appendChild(div);
+            }
+        }
+
+        function renderApp() {
+            const rowsContainer = document.getElementById('rows-container');
+            const overlapLayer = document.getElementById('overlap-layer');
+            rowsContainer.innerHTML = "";
+            overlapLayer.innerHTML = "";
+
+            // Array to track how many people are working at each hour (0-23) relative to Viewer
+            let overlapCounts = new Array(24).fill(0);
+
+            // Get Viewer's current day start to use as a baseline
+            const viewerNow = DateTime.now(); 
+
+            stakeholders.forEach(person => {
+                const row = document.createElement('div');
+                row.className = 'stakeholder-row';
+
+                // 1. Name Column
+                const info = document.createElement('div');
+                info.className = 'stakeholder-info';
+                info.innerHTML = `
+                    <span>${person.name} <span style="font-weight:normal; font-size:0.8em; color:#666">(${person.zone})</span></span>
+                    <span class="remove-btn" onclick="removeStakeholder(${person.id})">&times;</span>
+                `;
+                row.appendChild(info);
+
+                // 2. 24 Hour Slots
+                for (let i = 0; i < 24; i++) {
+                    const slot = document.createElement('div');
+                    slot.className = 'time-slot';
+                    
+                    // Core Logic:
+                    // Create a DateTime object for "Hour i" in the Viewer's local time
+                    const viewerTimeAtSlot = viewerNow.startOf('day').plus({ hours: i });
+                    
+                    // Convert that specific instant to the Stakeholder's Zone
+                    const personTimeAtSlot = viewerTimeAtSlot.setZone(person.zone);
+                    const personHour = personTimeAtSlot.hour;
+
+                    // Check if this hour is within their working hours
+                    // Handle simple range (9-17) and overnight range (22-06)
+                    let isWorking = false;
+                    
+                    if (person.startH < person.endH) {
+                        // Standard day shift
+                        if (personHour >= person.startH && personHour < person.endH) isWorking = true;
+                    } else {
+                        // Overnight shift
+                        if (personHour >= person.startH || personHour < person.endH) isWorking = true;
+                    }
+
+                    if (isWorking) {
+                        slot.classList.add('is-working');
+                        overlapCounts[i]++; // Someone is working at this Viewer hour
+                    }
+
+                    row.appendChild(slot);
+                }
+                rowsContainer.appendChild(row);
+            });
+
+            // 3. Render Overlaps
+            // Only highlight if we have more than 1 stakeholder
+            const hasOverlaps = stakeholders.length > 1;
+            let overlapFound = false;
+
+            for (let i = 0; i < 24; i++) {
+                const col = document.createElement('div');
+                col.className = 'overlap-col';
+                
+                if (hasOverlaps && overlapCounts[i] === stakeholders.length) {
+                    col.classList.add('is-golden');
+                    overlapFound = true;
+                }
+                overlapLayer.appendChild(col);
+            }
+
+            // Status Message
+            const statusDiv = document.getElementById('status-msg');
+            if (stakeholders.length < 2) {
+                statusDiv.innerText = "Add more stakeholders to see overlaps.";
+            } else if (overlapFound) {
+                statusDiv.innerText = "Golden Hours found! (Highlighted in Green)";
+                statusDiv.style.color = "#2ec4b6";
+            } else {
+                statusDiv.innerText = "No overlapping hours found.";
+                statusDiv.style.color = "red";
+            }
+        }
+
+        // --- Export Feature ---
+        function downloadImage() {
+            const element = document.getElementById("visualization-area");
+            
+            // Adjust styles slightly for screenshot (remove overflow, ensure width)
+            const originalOverflow = element.style.overflow;
+            element.style.overflow = "visible"; 
+            
+            html2canvas(element, {
+                backgroundColor: "#ffffff",
+                scale: 2 // High res
+            }).then(canvas => {
+                // Revert style
+                element.style.overflow = originalOverflow;
+
+                // Trigger download
+                const link = document.createElement('a');
+                link.download = 'golden-hour-schedule.png';
+                link.href = canvas.toDataURL();
+                link.click();
+            });
+        }
+    </script>
+</body>
+</html>
